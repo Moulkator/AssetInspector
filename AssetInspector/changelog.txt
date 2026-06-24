@@ -1,0 +1,17 @@
+v1.3.0 - Github + Cartography Assets Release
+- Compatibility with the mod version checker from _Lib
+
+v1.2.0
+- Addition of a Follow Cursor toggle
+- When the toggle is OFF, ability to move the UI where you need
+- When the toggle is OFF, a Hide delay slider appears, going from 0 to 5 seconds
+- The delay is frozen when your cursor is on the floating UI
+- Position of the floating UI is kept between maps and restarts
+
+v1.1.0
+- Addition of a cog button to display the scale settings
+- Addition of scale settings going from x0,5 to x5
+- Scale settings should be persistent between maps and restarts
+- Position of the button is now kept at the same place wether you select an asset or not
+
+v1.0.0 - Discord release
