@@ -1,7 +1,7 @@
 {
     "name": "Asset Inspector",
     "unique_id": "Moulk.AssetInspector",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "author": "Moulk",
     "description": "Displays the name, type, layer and packs of hovered assets",
     "dd_version": "1.2.0.1"

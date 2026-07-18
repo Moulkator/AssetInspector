@@ -39,11 +39,12 @@ const SCALE_MAX = 5.0
 const SCALE_DEFAULT = 1.0
 const SCALE_STEP = 0.1
 const SETTINGS_FILE = "user://inspect_asset_settings.json"
+const SHORTCUT_ACTION = "inspect_asset_toggle"
 
 func start() -> void:
 	print("[InspectAsset] start() called")
 
-	# Register with _lib if available (active le verificateur de mise a jour)
+	# Register with _lib if available (enables the update checker + rebindable shortcut)
 	if Engine.has_signal("_lib_register_mod"):
 		Engine.emit_signal("_lib_register_mod", self)
 		if "API" in Global and Global.API.has("UpdateChecker"):
@@ -52,6 +53,7 @@ func start() -> void:
 				.fetcher(uc.github_fetcher("Moulkator", "AssetInspector"))\
 				.downloader(uc.github_downloader("Moulkator", "AssetInspector"))\
 				.build())
+		register_shortcut()
 	select_tool = Global.Editor.Tools["SelectTool"]
 	select_tool_panel = Global.Editor.Toolset.GetToolPanel("SelectTool")
 	print("[InspectAsset] Mod root: ", Global.Root)
@@ -99,6 +101,61 @@ func load_settings() -> void:
 		print("[InspectAsset] Settings loaded (ui_scale: ", ui_scale, ")")
 	else:
 		print("[InspectAsset] Failed to parse settings file")
+
+func register_shortcut() -> void:
+	# Requires _Lib's InputMapApi (rebindable via _Lib's Preferences window).
+	if not ("API" in Global) or Global.API == null:
+		print("[InspectAsset] _Lib API not available, shortcut disabled")
+		return
+
+	# Default keybind: CTRL+I. _Lib's deserialize_event splits on "+",
+	# reads modifiers (alt/ctrl/cmd/shift) and parses the last token as a
+	# scancode when it is a valid integer (KEY_I == 73 in Godot 3).
+	var inputs = {
+		"Toggle Inspect Mode": [SHORTCUT_ACTION, "Ctrl+" + str(KEY_I)]
+	}
+
+	# Clear stale events from previous load attempts so the default below
+	# isn't appended on top of leftover bindings.
+	if InputMap.has_action(SHORTCUT_ACTION):
+		InputMap.action_erase_events(SHORTCUT_ACTION)
+
+	# Step 1: register the action and bind the default key in InputMap.
+	Global.API.InputMapApi.add_actions(inputs, "Asset Inspector")
+
+	# Step 2: expose the binding in _Lib's Preferences so the user can
+	# rebind it. build() also loads any previously saved rebind, which
+	# then overrides the CTRL+I default above.
+	Global.API.ModConfigApi.create_config() \
+		.shortcuts("shortcuts", inputs) \
+		.build()
+
+	# Hook _Lib's master InputEventEmitterNode: signal_input fires from
+	# _input (before _unhandled_input), so we can consume the event
+	# before DD reacts to it.
+	var emitter = Global.API.InputMapApi.master_event_emitter()
+	emitter.connect("signal_input", self, "_on_lib_input")
+	print("[InspectAsset] Shortcut registered (default CTRL+I)")
+
+func _on_lib_input(event, emitter) -> void:
+	# Only react while the Select Tool is active.
+	if Global.Editor.ActiveTool != select_tool:
+		return
+	if not (event is InputEventKey):
+		return
+	if not event.pressed or event.echo:
+		return
+	if not InputMap.event_is_action(event, SHORTCUT_ACTION):
+		return
+	if inspect_button == null:
+		return
+
+	# Toggling .pressed on a toggle-mode Button emits "toggled" in Godot 3,
+	# so _on_inspect_toggled runs and keeps the UI state in sync.
+	inspect_button.pressed = not inspect_button.pressed
+
+	# Consume the event so nothing else reacts to CTRL+I.
+	emitter.accept_event()
 
 func _load_icon(icon_path: String, scale: float = 1.0) -> ImageTexture:
 	var full_path = Global.Root + icon_path

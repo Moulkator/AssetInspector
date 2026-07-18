@@ -1,3 +1,6 @@
+v1.3.1
+- Added a rebindable shortcut for the tool (CTRL+I)
+
 v1.3.0 - Github + Cartography Assets Release
 - Compatibility with the mod version checker from _Lib
 
