@@ -19,6 +19,9 @@ var reset_button = null
 var tooltip_label = null
 var inspect_enabled = false
 var ui_scale = 1.0
+var show_tags = true
+var tags_toggle = null
+var _tags_cache = {}  # tags_file path -> Dictionary[full_texture_path] = Array[tag_name]
 var follow_cursor = true
 var hide_delay = 2.0  # seconds before hiding tooltip in fixed mode
 var inspect_button_row = null  # HBox containing inspect button + cog
@@ -68,7 +71,8 @@ func save_settings() -> void:
 	var data = {
 		"ui_scale": ui_scale,
 		"follow_cursor": follow_cursor,
-		"hide_delay": hide_delay
+		"hide_delay": hide_delay,
+		"show_tags": show_tags
 	}
 	if tooltip_custom_position != null:
 		data["tooltip_pos_x"] = tooltip_custom_position.x
@@ -96,6 +100,8 @@ func load_settings() -> void:
 			follow_cursor = bool(data["follow_cursor"])
 		if data.has("hide_delay"):
 			hide_delay = clamp(float(data["hide_delay"]), 0.0, 5.0)
+		if data.has("show_tags"):
+			show_tags = bool(data["show_tags"])
 		if data.has("tooltip_pos_x") and data.has("tooltip_pos_y"):
 			tooltip_custom_position = Vector2(float(data["tooltip_pos_x"]), float(data["tooltip_pos_y"]))
 		print("[InspectAsset] Settings loaded (ui_scale: ", ui_scale, ")")
@@ -297,6 +303,19 @@ func create_settings_popup() -> void:
 	follow_hbox.add_child(follow_cursor_toggle)
 	settings_popup.add_child(follow_hbox)
 	
+	# --- Show tags toggle ---
+	var tags_hbox = HBoxContainer.new()
+	tags_hbox.name = "ShowTagsRow"
+	var tags_label = Label.new()
+	tags_label.text = "Show tags"
+	tags_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tags_hbox.add_child(tags_label)
+	tags_toggle = CheckButton.new()
+	tags_toggle.pressed = show_tags
+	tags_toggle.connect("toggled", self, "_on_show_tags_toggled")
+	tags_hbox.add_child(tags_toggle)
+	settings_popup.add_child(tags_hbox)
+	
 	# --- Hide delay (only visible in fixed mode) ---
 	hide_delay_container = VBoxContainer.new()
 	hide_delay_container.name = "HideDelayContainer"
@@ -446,6 +465,11 @@ func _on_follow_cursor_toggled(pressed: bool) -> void:
 		hide_delay_container.visible = not follow_cursor
 	save_settings()
 	print("[InspectAsset] Follow cursor: ", "ON" if pressed else "OFF")
+
+func _on_show_tags_toggled(pressed: bool) -> void:
+	show_tags = pressed
+	save_settings()
+	print("[InspectAsset] Show tags: ", "ON" if pressed else "OFF")
 
 func _on_hide_delay_changed(value: float) -> void:
 	hide_delay = value
@@ -698,7 +722,99 @@ func get_asset_display_name(node, selectable = null) -> String:
 	if pack_name != "":
 		lines.append(pack_name)
 	
+	# Line 4+: Tags (if enabled and any found) — 1 tag on the first line,
+	# then 2 tags per line after that.
+	if show_tags:
+		var tags = get_asset_tags(node, selectable)
+		if tags.size() > 0:
+			lines.append("----------")
+			lines.append("Tags: " + tags[0])
+			var i = 1
+			while i < tags.size():
+				if i + 1 < tags.size():
+					lines.append(tags[i] + ", " + tags[i + 1])
+				else:
+					lines.append(tags[i])
+				i += 2
+	
 	return PoolStringArray(lines).join("\n")
+
+func get_asset_tags(node, selectable = null) -> Array:
+	# Master.Tags is a C# SortedDictionary<string, HashSet<string>>, which the
+	# engine cannot marshal to Variant (confirmed: "Attempted to convert an
+	# unmarshallable managed type to Variant. Name: 'SortedDictionary`2'").
+	# So instead of reading it through GDScript reflection, we read the same
+	# source data DD reads from: data/default.dungeondraft_tags, a JSON file
+	# shaped { "tags": { "TagName": ["relative/path.webp", ...] }, "sets": {...} }
+	# living at the pack root (or res://data/ for default DD assets).
+	var tex_path = get_texture_path(node, selectable)
+	if tex_path == "":
+		return []
+	
+	var tags_file = ""
+	var pack_dir = ""
+	
+	if tex_path.begins_with("res://packs/"):
+		var after_packs = tex_path.right(12)
+		var slash_idx = after_packs.find("/")
+		if slash_idx == -1:
+			return []
+		var pack_id = after_packs.left(slash_idx)
+		pack_dir = "res://packs/" + pack_id + "/"
+		tags_file = pack_dir + "data/default.dungeondraft_tags"
+	elif tex_path.begins_with("res://textures/"):
+		tags_file = "res://data/default.dungeondraft_tags"
+		pack_dir = ""
+	else:
+		return []
+	
+	var reverse_lookup = _load_tags_file(tags_file, pack_dir)
+	if reverse_lookup.has(tex_path):
+		var found = (reverse_lookup[tex_path] as Array).duplicate()
+		found.sort()
+		return found
+	
+	return []
+
+func _load_tags_file(tags_file: String, pack_dir: String) -> Dictionary:
+	# Cached per tags_file path: full_texture_path -> Array of tag names.
+	if _tags_cache.has(tags_file):
+		return _tags_cache[tags_file]
+	
+	var reverse = {}
+	var file = File.new()
+	if not file.file_exists(tags_file):
+		_tags_cache[tags_file] = reverse
+		return reverse
+	
+	if file.open(tags_file, File.READ) != OK:
+		print("[InspectAsset] Failed to open tags file: ", tags_file)
+		_tags_cache[tags_file] = reverse
+		return reverse
+	
+	var text = file.get_as_text()
+	file.close()
+	
+	var parsed = JSON.parse(text)
+	if parsed.error != OK or not (parsed.result is Dictionary) or not parsed.result.has("tags"):
+		print("[InspectAsset] Failed to parse tags file: ", tags_file)
+		_tags_cache[tags_file] = reverse
+		return reverse
+	
+	var tags_data = parsed.result["tags"]
+	for tag_name in tags_data.keys():
+		var paths = tags_data[tag_name]
+		if not (paths is Array):
+			continue
+		for rel_path in paths:
+			var full_path = pack_dir + str(rel_path)
+			if not reverse.has(full_path):
+				reverse[full_path] = []
+			reverse[full_path].append(tag_name)
+	
+	print("[InspectAsset] Loaded tags file: ", tags_file, " (", tags_data.keys().size(), " tags, ", reverse.size(), " tagged assets)")
+	_tags_cache[tags_file] = reverse
+	return reverse
 
 func get_pack_name(node, selectable = null) -> String:
 	var tex_path = get_texture_path(node, selectable)

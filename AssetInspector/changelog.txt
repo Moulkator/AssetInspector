@@ -1,5 +1,9 @@
+v1.3.2
+- Tags related to the asset can now be displayed
+- Option in the settings to display or hide the tags
+
 v1.3.1
-- Added a rebindable shortcut for the tool (CTRL+I)
+- Added a shortcut for the tool (CTRL+I), rebindable if _Lib is enabled
 
 v1.3.0 - Github + Cartography Assets Release
 - Compatibility with the mod version checker from _Lib
