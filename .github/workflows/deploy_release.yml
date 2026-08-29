@@ -34,13 +34,17 @@ jobs:
       - name: Copy files recursively
         run: cp -r AssetInspector/. AssetInspector_${{ needs.check-version.outputs.version }}/
       - name: Zip Release
-        run: zip -r AssetInspector_${{ needs.check-version.outputs.version }}.zip AssetInspector_${{ needs.check-version.outputs.version }}
+        run: |
+          zip -r AssetInspector_${{ needs.check-version.outputs.version }}.zip AssetInspector_${{ needs.check-version.outputs.version }}
+          zip -r AssetInspector.zip AssetInspector_${{ needs.check-version.outputs.version }}
       - name: Deploy Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ needs.check-version.outputs.version }}
           tag_name: ${{ needs.check-version.outputs.version }}
           prerelease: ${{ contains(needs.check-version.outputs.version, '-') }}
-          files: AssetInspector_${{ needs.check-version.outputs.version }}.zip
+          files: |
+            AssetInspector_${{ needs.check-version.outputs.version }}.zip
+            AssetInspector.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
